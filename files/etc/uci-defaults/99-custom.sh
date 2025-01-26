@@ -39,6 +39,9 @@ if [ "$count" -eq 1 ]; then
    uci set network.lan.proto='static'
    uci set network.lan.ipaddr='10.0.0.2'
    uci set network.lan.gateway='10.0.0.1'
+   uci set network.lan.delegate='0'
+   uci set network.lan.proto='static'
+  
 elif [ "$count" -gt 1 ]; then
    # 多网口设备 支持修改为别的ip地址
    uci set network.lan.ipaddr='10.0.0.2'

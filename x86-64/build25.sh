@@ -41,7 +41,7 @@ fi
 
 
 # 输出调试信息
-echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建固件..."
+echo "$(date '+%Y-%d %H:%M:%S') - 开始构建固件..."
 
 # ============= imm仓库内的插件==============
 # 定义所需安装的包列表 下列插件你都可以自行删减
@@ -105,6 +105,30 @@ if echo "$PACKAGES" | grep -q "luci-app-ssr-plus"; then
 else
     echo "⚪️ 未选择 luci-app-ssr-plus"
 fi
+
+# ================== 集成 Honk 与 LuCI 界面 ==================
+echo "🔄 正在集成 Honk (eBPF 透明代理)..."
+
+# 1. 添加 Honk 必需的 eBPF 内核模块与 Geo 数据库依赖 (ImmortalWrt 官方源自带)
+PACKAGES="$PACKAGES kmod-sched-core kmod-sched-bpf kmod-veth kmod-xdp-sockets-diag v2ray-geoip v2ray-geosite"
+
+# 2. 将 honk 和 luci-app-honk 加入打包列表
+PACKAGES="$PACKAGES honk luci-app-honk"
+
+# 3. 从 kenzok8/openwrt-honk 获取最新的 x86_64 架构 APK 安装包并放入本地 packages 目录
+mkdir -p /home/build/immortalwrt/packages/
+
+HONK_URLS=$(curl -s https://api.github.com/repos/kenzok8/openwrt-honk/releases/latest \
+  | grep "browser_download_url.*x86_64\.apk\"" \
+  | cut -d '"' -f 4)
+
+for url in $HONK_URLS; do
+    echo "⬇️ 正在下载: $url"
+    wget -q "$url" -P /home/build/immortalwrt/packages/
+done
+echo "✅ Honk 相关软件包下载完成！"
+ls -lah /home/build/immortalwrt/packages/*honk*
+# ===========================================================
 
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"

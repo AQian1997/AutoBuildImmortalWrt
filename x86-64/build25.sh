@@ -7,9 +7,16 @@ LOGFILE="/tmp/uci-defaults-log.txt"
 echo "Starting 99-custom.sh at $(date)" >> $LOGFILE
 echo "编译固件大小为: $PROFILE MB"
 echo "Include Docker: $INCLUDE_DOCKER"
+echo "Include Honk: $INCLUDE_HONK"
+echo "Include OpenClash: $INCLUDE_OPENCLASH"
 
-echo "Create pppoe-settings"
+echo "Create pppoe-settings and custom_router_ip"
 mkdir -p  /home/build/immortalwrt/files/etc/config
+
+# 写入自定义后台管理 IP (默认 10.0.0.2)，供 99-custom.sh 读取
+ROUTER_IP=${ROUTER_IP:-10.0.0.2}
+echo "$ROUTER_IP" > /home/build/immortalwrt/files/etc/config/custom_router_ip.txt
+echo "✅ 已设置路由器管理后台 IP 为: $ROUTER_IP"
 
 # 创建pppoe配置文件 yml传入环境变量ENABLE_PPPOE等 写入配置文件 供99-custom.sh读取
 cat << EOF > /home/build/immortalwrt/files/etc/config/pppoe-settings
@@ -60,7 +67,7 @@ PACKAGES="$PACKAGES openssh-sftp-server"
 # 文件管理器
 PACKAGES="$PACKAGES luci-i18n-filemanager-zh-cn"
 # ======== shell/apk-custom-packages.sh =======
-# 合并imm仓库以外的第三方插件 暂时注释
+# 合并imm仓库以外的第三方插件
 PACKAGES="$PACKAGES $CUSTOM_PACKAGES"
 
 
@@ -70,10 +77,16 @@ if [ "$INCLUDE_DOCKER" = "yes" ]; then
     echo "Adding package: luci-i18n-dockerman-zh-cn"
 fi
 
-# 若构建openclash 则添加内核
+# 判断编译界面是否勾选了 OpenClash
+if [ "$INCLUDE_OPENCLASH" = "yes" ]; then
+    PACKAGES="$PACKAGES luci-app-openclash"
+fi
+
+# 若构建openclash 则添加内核与安装包
 if echo "$PACKAGES" | grep -q "luci-app-openclash"; then
     echo "✅ 已选择 luci-app-openclash，添加 openclash core"
     mkdir -p files/etc/openclash/core
+    mkdir -p /home/build/immortalwrt/packages/
     # Download clash_meta
     META_URL="https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-amd64-v1.tar.gz"
     wget -qO- $META_URL | tar xOvz > files/etc/openclash/core/clash_meta
@@ -106,32 +119,36 @@ else
     echo "⚪️ 未选择 luci-app-ssr-plus"
 fi
 
-# ================== 集成 Honk 与 LuCI 界面 ==================
-echo "🔄 正在集成 Honk (eBPF 透明代理)..."
+# ================== 判断是否集成 Honk 与 LuCI 界面 ==================
+if [ "$INCLUDE_HONK" = "yes" ]; then
+    echo "🔄 已选择 Honk，正在集成 Honk (eBPF 透明代理)..."
 
-# 1. 添加 Honk 必需的 eBPF 内核模块与 Geo 数据库依赖 (ImmortalWrt 官方源自带)
-PACKAGES="$PACKAGES kmod-sched-core kmod-sched-bpf kmod-veth kmod-xdp-sockets-diag v2ray-geoip v2ray-geosite"
+    # 1. 添加 Honk 必需的 eBPF 内核模块与 Geo 数据库依赖 (ImmortalWrt 官方源自带)
+    PACKAGES="$PACKAGES kmod-sched-core kmod-sched-bpf kmod-veth kmod-xdp-sockets-diag v2ray-geoip v2ray-geosite"
 
-# 2. 将 honk 和 luci-app-honk 加入打包列表
-PACKAGES="$PACKAGES honk luci-app-honk"
+    # 2. 将 honk 和 luci-app-honk 加入打包列表
+    PACKAGES="$PACKAGES honk luci-app-honk"
 
-# 3. 从 kenzok8/openwrt-honk 获取最新的 x86_64 架构 APK 安装包，并去除多余的 -x86_64 后缀以通过 25.12 ImageBuilder 校验
-mkdir -p /home/build/immortalwrt/packages/
+    # 3. 从 kenzok8/openwrt-honk 获取最新的 x86_64 架构 APK 安装包，并去除多余的 -x86_64 后缀以通过 25.12 ImageBuilder 校验
+    mkdir -p /home/build/immortalwrt/packages/
 
-HONK_URLS=$(curl -s https://api.github.com/repos/kenzok8/openwrt-honk/releases/latest \
-  | grep "browser_download_url.*-x86_64\.apk\"" \
-  | cut -d '"' -f 4)
+    HONK_URLS=$(curl -s https://api.github.com/repos/kenzok8/openwrt-honk/releases/latest \
+      | grep "browser_download_url.*-x86_64\.apk\"" \
+      | cut -d '"' -f 4)
 
-for url in $HONK_URLS; do
-    orig_name=$(basename "$url")
-    # 关键修复：将文件名中的 -x86_64.apk 替换为 .apk 还原标准名称
-    clean_name="${orig_name%-x86_64.apk}.apk"
-    echo "⬇️ 正在下载: $orig_name -> 重命名为标准格式: $clean_name"
-    wget -q "$url" -O "/home/build/immortalwrt/packages/$clean_name"
-done
-echo "✅ Honk 相关软件包下载完成！"
-ls -lah /home/build/immortalwrt/packages/*honk*
-# ===========================================================
+    for url in $HONK_URLS; do
+        orig_name=$(basename "$url")
+        # 将文件名中的 -x86_64.apk 替换为 .apk 还原标准名称
+        clean_name="${orig_name%-x86_64.apk}.apk"
+        echo "⬇️ 正在下载: $orig_name -> 重命名为标准格式: $clean_name"
+        wget -q "$url" -O "/home/build/immortalwrt/packages/$clean_name"
+    done
+    echo "✅ Honk 相关软件包下载完成！"
+    ls -lah /home/build/immortalwrt/packages/*honk*
+else
+    echo "⚪️ 未选择 Honk"
+fi
+# ====================================================================
 
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"

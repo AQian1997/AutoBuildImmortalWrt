@@ -41,7 +41,7 @@ fi
 
 
 # 输出调试信息
-echo "$(date '+%Y-%d %H:%M:%S') - 开始构建固件..."
+echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建固件..."
 
 # ============= imm仓库内的插件==============
 # 定义所需安装的包列表 下列插件你都可以自行删减
@@ -115,16 +115,19 @@ PACKAGES="$PACKAGES kmod-sched-core kmod-sched-bpf kmod-veth kmod-xdp-sockets-di
 # 2. 将 honk 和 luci-app-honk 加入打包列表
 PACKAGES="$PACKAGES honk luci-app-honk"
 
-# 3. 从 kenzok8/openwrt-honk 获取最新的 x86_64 架构 APK 安装包并放入本地 packages 目录
+# 3. 从 kenzok8/openwrt-honk 获取最新的 x86_64 架构 APK 安装包，并去除多余的 -x86_64 后缀以通过 25.12 ImageBuilder 校验
 mkdir -p /home/build/immortalwrt/packages/
 
 HONK_URLS=$(curl -s https://api.github.com/repos/kenzok8/openwrt-honk/releases/latest \
-  | grep "browser_download_url.*x86_64\.apk\"" \
+  | grep "browser_download_url.*-x86_64\.apk\"" \
   | cut -d '"' -f 4)
 
 for url in $HONK_URLS; do
-    echo "⬇️ 正在下载: $url"
-    wget -q "$url" -P /home/build/immortalwrt/packages/
+    orig_name=$(basename "$url")
+    # 关键修复：将文件名中的 -x86_64.apk 替换为 .apk 还原标准名称
+    clean_name="${orig_name%-x86_64.apk}.apk"
+    echo "⬇️ 正在下载: $orig_name -> 重命名为标准格式: $clean_name"
+    wget -q "$url" -O "/home/build/immortalwrt/packages/$clean_name"
 done
 echo "✅ Honk 相关软件包下载完成！"
 ls -lah /home/build/immortalwrt/packages/*honk*
